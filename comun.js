@@ -22,7 +22,7 @@ async function gate(){
     PEOPLE=d.people;
     byId=Object.fromEntries(PEOPLE.map(p=>[p.id,p]));
     ALL=[...PEOPLE].sort((a,b)=>a.n.localeCompare(b.n,'es'));
-    QR_IMG=d.qr;
+    QR_IMG=(typeof qrPropio==='function')?qrPropio():d.qr;
     lsSet('bicafe_c',CODE);
     return true;
   }catch(e){lsSet('bicafe_c','');return false}

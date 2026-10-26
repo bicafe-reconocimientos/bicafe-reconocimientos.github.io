@@ -21,9 +21,43 @@
 .qrbox h2{font-size:24px}
 .pubbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;border-radius:12px;padding:10px 12px;font-size:14px;
   background:color-mix(in srgb,var(--red) 12%,transparent);border:1px solid color-mix(in srgb,var(--red) 35%,transparent)}
+.pubbar .row{display:flex;gap:6px}
+#resetBtn{align-self:flex-start}
 .pubbar.on{background:color-mix(in srgb,var(--green) 14%,transparent);border-color:color-mix(in srgb,var(--green) 45%,transparent)}
 @media (prefers-reduced-motion: reduce){.gcard{animation:none}}`;
   const s=document.createElement('style');s.textContent=css;document.head.appendChild(s);
+})();
+
+
+/* ---- QR generado en la página (dirección pública + código de acceso) ---- */
+const QR_DATA='41:fe8ca123bfc17fabce106eaaade86bb74eb002e5dba40a9e9aec1669f4b507faaaaaaafe0153d6b4003af08f5573a6eb9107fd76a2aa3c2a090dc22133b2385fdf50784eedf6fdcfa8afbc0b4c1a14d4506942176a4453166869e59f44bd559f0a8db4b4ac2d8bea39a3a02ee3fb237fdd5e2eb3cbb1828b2d5283a6f61624165cf21c979e5b807876a6162e53ee3480a8c8d3d86cc4ad19bfe63f87b373d122e63722d98fbbd177fa805dfab346ff8e48ef6bd04681e5f18bad2bd40fa5d519d85a96eaf6e9fdf50426eab152fe3e05b53e0';
+function qrPropio(){
+  const [n,hx]=QR_DATA.split(':');const N=+n;
+  const bits=[...hx].map(h=>parseInt(h,16).toString(2).padStart(4,'0')).join('');
+  const s=12,m=4,W=(N+2*m)*s,c=document.createElement('canvas');c.width=c.height=W;
+  const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,W,W);g.fillStyle='#1c1c1c';
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(bits[y*N+x]==='1')g.fillRect((x+m)*s,(y+m)*s,s,s);
+  const bw=W*0.30,bh=W*0.12,bx=(W-bw)/2,by=(W-bh)/2;
+  g.fillStyle='#fff';g.fillRect(bx-s*0.6,by-s*0.6,bw+s*1.2,bh+s*1.2);
+  ['#D2423B','#FFD23F','#76B043'].forEach((col,i)=>{g.save();g.translate(bx+bw*(i+0.5)/3,by+bh/2);g.rotate(0.45);
+    g.fillStyle=col;g.beginPath();g.ellipse(0,0,bw/8,bh/2.1,0,0,6.29);g.fill();
+    g.strokeStyle='#fff';g.lineWidth=s*0.45;g.beginPath();g.moveTo(0,-bh/2.3);g.quadraticCurveTo(bw/16,0,0,bh/2.3);g.stroke();g.restore()});
+  return c.toDataURL('image/png');
+}
+
+/* ---- Nueva ronda: si el administrador reinició la votación, este teléfono puede volver a votar ---- */
+(async function(){
+  try{
+    const r=await fetch(API_URL+'?pub=1',{cache:'no-store'}).then(r=>r.json());
+    if(typeof r.ronda!=='number')return;
+    let prev=lsGet('bicafe_ronda');
+    if(prev===null&&lsGet('bicafe_voto_2026'))prev='0';
+    lsSet('bicafe_ronda',String(r.ronda));
+    if(prev!==null&&prev!==String(r.ronda)){
+      try{localStorage.removeItem('bicafe_voto_2026')}catch(e){}
+      if(typeof state!=='undefined'&&state.voted){state.voted=null;state.step=-1;state.votes={};if(PEOPLE.length)render()}
+    }
+  }catch(e){}
 })();
 
 /* ---- Código QR ---- */
@@ -95,10 +129,22 @@ function mostrarGanadores(g){
 /* ---- Control del administrador (página de resultados) ---- */
 function publishHTML(){
   const p=!!st.publicado;
+  const reset=st.confirmReset
+    ?`<div class="pubbar"><span><b>Esto borra todos los votos</b> de la hoja y oculta a los ganadores. Todos podrán votar de nuevo.</span>
+       <span class="row"><button class="btn sm danger" id="resetYes" type="button">${st.resetting?'Reiniciando…':'Sí, reiniciar'}</button><button class="btn sm ghost" id="resetNo" type="button">Cancelar</button></span></div>`
+    :`<button class="btn sm ghost" id="resetBtn" type="button">Reiniciar votación</button>`;
   return `<div class="pubbar ${p?'on':''}"><span>${p?'Los empleados <b>ya pueden ver</b> a los ganadores.':'Los empleados <b>aún no pueden ver</b> los resultados.'}</span>
-    <button class="btn sm ${p?'ghost':'main'}" id="pubBtn" type="button">${st.publishing?'Guardando…':(p?'Ocultar ganadores':'Publicar ganadores')}</button></div>`;
+    <button class="btn sm ${p?'ghost':'main'}" id="pubBtn" type="button">${st.publishing?'Guardando…':(p?'Ocultar ganadores':'Publicar ganadores')}</button></div>
+    ${reset}`;
 }
 function bindPublish(){
+  const rb=document.getElementById('resetBtn');if(rb)rb.onclick=()=>{st.confirmReset=true;render()};
+  const rn=document.getElementById('resetNo');if(rn)rn.onclick=()=>{st.confirmReset=false;render()};
+  const ry=document.getElementById('resetYes');if(ry)ry.onclick=async()=>{
+    if(st.resetting)return;st.resetting=true;render();
+    try{await api({action:'reiniciar',k:st.key})}catch(e){}
+    st.resetting=false;st.confirmReset=false;st.publicado=false;st.revealed={};st.cat=0;load();
+  };
   const b=document.getElementById('pubBtn');if(!b)return;
   b.onclick=async()=>{
     if(st.publishing)return;st.publishing=true;render();
